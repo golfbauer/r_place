@@ -9,14 +9,14 @@ def download_csv():
         response = requests.get(url, stream=True)
 
         if response.status_code == 200:
-            with open(f"/Users/henritruetsch/PycharmProjects/r_place/csv_files/2023_place_canvas_history-{file_index}.csv.gzip", 'wb') as file:
+            with open(f"/Users/robvandiepen/git/golfbauer/r_place/csv_files/2023_place_canvas_history-{file_index}.csv.gzip", 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
             print(f"Downloaded: 2023_place_canvas_history-{file_index}.csv.gzip")
         else:
             print(f"Failed to download: {url} (Status code: {response.status_code})")
 
-input_dir = "/Users/henritruetsch/PycharmProjects/r_place/csv_files"
+input_dir = "/Users/robvandiepen/git/golfbauer/r_place/csv_files"
 
 if __name__ == "__main__":
     download_csv()

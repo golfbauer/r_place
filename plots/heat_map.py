@@ -5,7 +5,8 @@ import plotly.express as px
 
 DB_PARAMS = {
     'dbname': 'r_place',
-    'user': 'henritruetsch',
+    'user': 'postgres',
+    'password': 'secret',
     'host': 'localhost',
     'port': 5432
 }

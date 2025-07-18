@@ -7,11 +7,12 @@ import csv
 
 from psycopg2.extras import execute_values
 
-CSV_DIR = "/Users/henritruetsch/PycharmProjects/r_place/csv_files"
+CSV_DIR = "/Users/robvandiepen/git/golfbauer/r_place/csv_files"
 BATCH_SIZE = 10000
 DB_PARAMS = {
     'dbname': 'r_place',
-    'user': 'henritruetsch',
+    'user': 'postgres',
+    'password': 'secret',
     'host': 'localhost',
     'port': 5432
 }
@@ -33,11 +34,22 @@ def process_file(file):
                 user = row['user']
                 coord = row['coordinate']
                 color = row['pixel_color']
-
-                if ',' in coord and coord.count(',') == 1:
+                if ',' not in coord:
+                    continue
+                comma_count = coord.count(',')
+                if comma_count == 1:
                     x_str, y_str = coord.split(',')
                     event_rows.append((timestamp, user, int(x_str), int(y_str), color))
-                elif ',' in coord and coord.count(',') == 3:
+                elif comma_count == 2:
+                    coord = coord.strip('{').strip('}').replace('X: ', '').replace('Y: ', '').replace('R: ', '')
+                    x, y, r = coord.split(',')
+                    x, y, r = (int(x), int(y), int(r))
+                    r2 = r*r
+                    for i in range(x - r, x + r + 1):
+                        for j in range(y - r, y + r + 1):
+                            if (i - x) ** 2 + (j - y) ** 2 <= r2:
+                                event_rows.append((timestamp, user, int(x), int(y), color))
+                elif comma_count == 3:
                     x1, y1, x2, y2 = map(int, coord.split(','))
                     for i in range(x1, x2 + 1):
                         for j in range(y1, y2 + 1):

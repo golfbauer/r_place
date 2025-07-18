@@ -1,2 +1,4 @@
 csv_files/
 test/
+plots/output_minute_canvases/canvas*
+plots/finished_videos/
