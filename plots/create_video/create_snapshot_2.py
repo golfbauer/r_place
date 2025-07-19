@@ -1,6 +1,5 @@
 import os
 import warnings
-
 import pandas as pd
 import numpy as np
 from PIL import Image
@@ -11,8 +10,8 @@ from settings import IMAGE_FOLDER
 
 X_MIN, X_MAX = -1500, 1499
 Y_MIN, Y_MAX = -1000, 999
-WIDTH = X_MAX - X_MIN + 1  # 3000
-HEIGHT = Y_MAX - Y_MIN + 1  # 2000
+WIDTH = X_MAX - X_MIN + 1
+HEIGHT = Y_MAX - Y_MIN + 1
 
 def delete_folder(path: str):
     for filename in os.listdir(path):
@@ -34,33 +33,49 @@ def fetch_minute_data(start: datetime, end: datetime):
     """
     return fetch(query, (start, end))
 
-def render_image(pixel_map: dict, output_path: str):
-    canvas = np.ones((HEIGHT, WIDTH, 3), dtype=np.uint8) * 255
-    for (x, y), color in pixel_map.items():
-        x_idx = x - X_MIN
-        y_idx = y - Y_MIN
-        if 0 <= x_idx < WIDTH and 0 <= y_idx < HEIGHT:
-            try:
-                rgb = tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
-                canvas[y_idx, x_idx] = rgb
-            except:
-                continue
+def render_image(canvas: np.ndarray, output_path: str):
     img = Image.fromarray(canvas, mode="RGB")
     img.save(output_path)
 
+def prepopulate_canvas_and_map(canvas, pixel_map, resume_time):
+    print(f"Preloading canvas snapshot until {resume_time}...")
+    query = """
+        SELECT DISTINCT ON (x, y) x, y, color, timestamp
+        FROM event
+        WHERE timestamp < %s
+        ORDER BY x, y, timestamp DESC;
+    """
+    df = fetch(query, (resume_time,))
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    for row in df.itertuples():
+        x_idx = row.x - X_MIN
+        y_idx = row.y - Y_MIN
+        if 0 <= x_idx < WIDTH and 0 <= y_idx < HEIGHT:
+            try:
+                rgb = tuple(int(row.color[i:i+2], 16) for i in (1, 3, 5))
+                canvas[y_idx, x_idx] = rgb
+                pixel_map[(row.x, row.y)] = row.color
+            except:
+                continue
+    print(f"Preloaded {len(pixel_map):,} pixels onto canvas.")
+
 def process_frames():
     os.makedirs(IMAGE_FOLDER, exist_ok=True)
-    delete_folder(IMAGE_FOLDER)
+    # delete_folder(IMAGE_FOLDER)
 
     start_time, end_time = get_min_max_timestamps()
+    start_time = pd.to_datetime("2023-07-24 08:22:00", utc=True)
     current = start_time.replace(second=0, microsecond=0)
     step = timedelta(hours=1)
 
-    # Calculate total number of minutes to be processed
     total_expected_images = int((end_time - current).total_seconds() // 60)
-
-    pixel_map = {}
     total_images = 0
+
+    canvas = np.ones((HEIGHT, WIDTH, 3), dtype=np.uint8) * 255
+    pixel_map = {}
+
+    prepopulate_canvas_and_map(canvas, pixel_map, current)
 
     while current < end_time:
         next_hour = current + step
@@ -73,11 +88,22 @@ def process_frames():
             minute_df = minute_df.sort_values('timestamp').drop_duplicates(['x', 'y'], keep='last')
 
             for row in minute_df.itertuples():
-                pixel_map[(row.x, row.y)] = row.color
+                key = (row.x, row.y)
+                if pixel_map.get(key) != row.color:
+                    x_idx = row.x - X_MIN
+                    y_idx = row.y - Y_MIN
+                    if 0 <= x_idx < WIDTH and 0 <= y_idx < HEIGHT:
+                        try:
+                            rgb = tuple(int(row.color[i:i+2], 16) for i in (1, 3, 5))
+                            canvas[y_idx, x_idx] = rgb
+                            pixel_map[key] = row.color
+                        except:
+                            continue
 
             filename = minute.strftime("canvas_%Y%m%d_%H%M.png")
             filepath = os.path.join(IMAGE_FOLDER, filename)
-            render_image(pixel_map, filepath)
+            render_image(canvas, filepath)
+
             total_images += 1
             print(f"[{total_images} / {total_expected_images}] Saved {filename}")
 
