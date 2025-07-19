@@ -7,25 +7,17 @@ import csv
 
 from psycopg2.extras import execute_values
 
-CSV_DIR = "/Users/robvandiepen/git/golfbauer/r_place/csv_files"
+from settings import DATABASE, CSV_DIR
+
 BATCH_SIZE = 10000
-DB_PARAMS = {
-    'dbname': 'r_place',
-    'user': 'postgres',
-    'password': 'secret',
-    'host': 'localhost',
-    'port': 5432
-}
 
 def process_file(file):
-    """Process a single file and insert rows into the event table."""
     file_path = os.path.join(CSV_DIR, file)
     print(f"Processing {file}")
 
-    conn = psycopg2.connect(**DB_PARAMS)
+    conn = psycopg2.connect(**DATABASE)
     cur = conn.cursor()
     event_rows = []
-
     with gzip.open(file_path, 'rt') as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -76,7 +68,6 @@ def process_file(file):
 
 def main():
     files = [f for f in sorted(os.listdir(CSV_DIR)) if f.endswith(".csv.gzip")]
-
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         executor.map(process_file, files)
 

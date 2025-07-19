@@ -6,14 +6,8 @@ from io import BytesIO
 import base64
 from dash import Dash, dcc, html, Output, Input
 
-# Constants
-DB_PARAMS = {
-    'dbname': 'r_place',
-    'user': 'postgres',
-    'password': 'secret',
-    'host': 'localhost',
-    'port': 5432
-}
+from manage.connection import fetch
+
 # Habbo
 X_MIN, X_MAX = 1650, 1730
 Y_MIN, Y_MAX = 930, 820
@@ -34,11 +28,8 @@ Y_MAX = (Y_MAX - 1000) * -1
 WIDTH = X_MAX - X_MIN + 1
 HEIGHT = Y_MAX - Y_MIN + 1
 
-# --------------------------------------------------
-# Step 1: Load all data into memory
 def load_data():
-    print("⏳ Fetching pixel history...")
-    conn = psycopg2.connect(**DB_PARAMS)
+    print("Fetching pixel history...")
     query = f"""
         SELECT DISTINCT ON (hour_bucket, x, y)
             hour_bucket,
@@ -58,18 +49,14 @@ def load_data():
         ) AS sub
         ORDER BY hour_bucket, x, y, timestamp DESC;
     """
-    df = pd.read_sql(query, conn)
-    conn.close()
-
+    df = fetch(query)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    print(f"✅ Loaded {len(df):,} pixel events.")
+    print(f"Loaded {len(df):,} pixel events.")
     return df
 
 df_all = load_data()
 unique_times = sorted(df_all['timestamp'].dt.floor('1min').unique())
 
-# --------------------------------------------------
-# Step 2: Generate canvas at a given timestamp
 def render_canvas_at(df: pd.DataFrame, timestamp: pd.Timestamp) -> str:
     df_filtered = df[df['timestamp'] <= timestamp]
     df_latest = df_filtered.sort_values('timestamp').drop_duplicates(subset=['x', 'y'], keep='last')
@@ -91,8 +78,6 @@ def render_canvas_at(df: pd.DataFrame, timestamp: pd.Timestamp) -> str:
     encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-# --------------------------------------------------
-# Step 3: Dash App Setup
 app = Dash(__name__)
 app.title = "r/place Canvas Animation"
 
@@ -108,8 +93,6 @@ app.layout = html.Div([
     html.Img(id="canvas-image", style={"width": "100%", "maxWidth": "1200px", "border": "1px solid #ccc"})
 ])
 
-# --------------------------------------------------
-# Step 4: Update frame index on interval
 @app.callback(
     Output('frame-index', 'data'),
     Input('interval-component', 'n_intervals'),
@@ -117,8 +100,6 @@ app.layout = html.Div([
 def update_index(n):
     return n % len(unique_times)
 
-# --------------------------------------------------
-# Step 5: Render canvas image and timestamp
 @app.callback(
     Output("canvas-image", "src"),
     Output("timestamp-display", "children"),
@@ -129,6 +110,5 @@ def update_image(time_index):
     img_src = render_canvas_at(df_all, timestamp)
     return img_src, f"🕒 Canvas state at: {timestamp}"
 
-# --------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)

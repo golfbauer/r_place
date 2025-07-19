@@ -1,4 +1,3 @@
 csv_files/
-test/
-plots/output_minute_canvases/canvas*
+plots/create_video/output_snapshots/
 plots/finished_videos/

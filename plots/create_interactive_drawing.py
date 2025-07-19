@@ -1,4 +1,3 @@
-import psycopg2
 import pandas as pd
 import numpy as np
 from PIL import Image
@@ -6,25 +5,9 @@ from io import BytesIO
 import base64
 from dash import Dash, dcc, html, Output, Input
 
-# Constants
-DB_PARAMS = {
-    'dbname': 'r_place',
-    'user': 'postgres',
-    'password': 'secret',
-    'host': 'localhost',
-    'port': 5432
-}
-X_MIN, X_MAX = -1500, 1499
-Y_MIN, Y_MAX = -1000, 1000
-WIDTH = X_MAX - X_MIN + 1
-HEIGHT = Y_MAX - Y_MIN + 1
+from manage.connection import fetch
 
-# --------------------------------------------------
-# Step 1: Load all data into memory (most recent per pixel per timestamp)
-def load_data():
-    print("⏳ Fetching pixel history...")
-    conn = psycopg2.connect(**DB_PARAMS)
-    query = """
+QUERY = """
         SELECT DISTINCT ON (hour_bucket, x, y)
     hour_bucket,
     x,
@@ -42,18 +25,22 @@ FROM (
 ) AS sub
 ORDER BY hour_bucket, x, y, timestamp DESC;
     """
-    df = pd.read_sql(query, conn)
-    conn.close()
 
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    print(f"✅ Loaded {len(df):,} pixel events.")
-    return df
+X_MIN, X_MAX = -1500, 1499
+Y_MIN, Y_MAX = -1000, 1000
+WIDTH = X_MAX - X_MIN + 1
+HEIGHT = Y_MAX - Y_MIN + 1
+
+def load_data():
+    print("Fetching pixel history...")
+    dataframe = fetch(QUERY)
+    dataframe['timestamp'] = pd.to_datetime(dataframe['timestamp'])
+    print(f"Loaded {len(dataframe):,} pixel events.")
+    return dataframe
 
 df_all = load_data()
 unique_times = sorted(df_all['timestamp'].dt.floor('1h').unique())
 
-# --------------------------------------------------
-# Step 2: Function to generate canvas at a timestamp
 def render_canvas_at(df: pd.DataFrame, timestamp: pd.Timestamp) -> str:
     df_filtered = df[df['timestamp'] <= timestamp]
     df_latest = df_filtered.sort_values('timestamp').drop_duplicates(subset=['x', 'y'], keep='last')
@@ -67,8 +54,8 @@ def render_canvas_at(df: pd.DataFrame, timestamp: pd.Timestamp) -> str:
         try:
             rgb = tuple(int(row.color[i:i+2], 16) for i in (1, 3, 5))
             canvas[y_idx, x_idx] = rgb
-        except:
-            continue  # skip malformed colors
+        except Exception as e:
+            continue
 
     img = Image.fromarray(canvas, mode="RGB")
     buf = BytesIO()
@@ -76,13 +63,11 @@ def render_canvas_at(df: pd.DataFrame, timestamp: pd.Timestamp) -> str:
     encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-# --------------------------------------------------
-# Step 3: Create Dash app
 app = Dash(__name__)
 app.title = "r/place Canvas Time Explorer"
 
 app.layout = html.Div([
-    html.H2("🖼️ r/place Canvas Snapshot"),
+    html.H2("r/place Canvas Snapshot"),
     dcc.Slider(
         id="time-slider",
         min=0,
@@ -104,8 +89,7 @@ app.layout = html.Div([
 def update_image(time_index):
     timestamp = unique_times[time_index]
     img_src = render_canvas_at(df_all, timestamp)
-    return img_src, f"🕒 Canvas state at: {timestamp}"
+    return img_src, f"Canvas state at: {timestamp}"
 
-# --------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)
